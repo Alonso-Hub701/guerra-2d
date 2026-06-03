@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Guerra Total 2D - ¡El Regreso!</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#4caf50;
+    font-family: sans-serif;
+}
+
+#world{
+    position:relative;
+    width:5000px;
+    height:5000px;
+}
+
+.player{
+    position:absolute;
+    width:30px;
+    height:30px;
+    background:blue;
+    border-radius:50%;
+    z-index: 10;
+}
+
+/* Soldados normales */
+.ally{
+    position:absolute;
+    width:16px;
+    height:16px;
+    background:cyan;
+    border-radius:50%;
+}
+
+.enemy{
+    position:absolute;
+    width:16px;
+    height:16px;
+    background:red;
+    border-radius:50%;
+}
+
+/* Jefes: THE BEST */
+.ally-best {
+    position:absolute;
+    width:32px; 
+    height:32px;
+    background: #00e5ff;
+    border: 3px solid white;
+    border-radius:50%;
+    box-shadow: 0 0 10px #00e5ff;
+}
+
+.enemy-best {
+    position:absolute;
+    width:32px; 
+    height:32px;
+    background: #ff1744;
+    border: 3px solid black;
+    border-radius:50%;
+    box-shadow: 0 0 10px #ff1744;
+}
+
+.bullet{
+    position:absolute;
+    width:6px;
+    height:6px;
+    border-radius:50%;
+}
+
+.bullet-ally { background: yellow; }
+.bullet-enemy { background: orange; }
+
+/* Dinamitas */
+.dynamite-player {
+    position: absolute;
+    width: 25px; /* ¡Tu dinamita ahora es visualmente gigante! */
+    height: 25px;
+    background: black;
+    border: 2px solid yellow;
+    border-radius: 5px;
+}
+
+.dynamite-boss {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: darkred;
+    border-radius: 3px;
+}
+
+/* Explosiones */
+.explosion-player {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255, 69, 0, 0.5);
+    border: 4px solid red;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    animation: explodePlayerEffect 0.5s ease-out forwards;
+}
+
+.explosion-boss {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255, 140, 0, 0.6);
+    border: 2px solid yellow;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    animation: explodeBossEffect 0.3s ease-out forwards;
+}
+
+@keyframes explodePlayerEffect {
+    0% { width: 0px; height: 0px; opacity: 1; }
+    100% { width: 500px; height: 500px; opacity: 0; } /* Tu explosión colosal */
+}
+
+@keyframes explodeBossEffect {
+    0% { width: 0px; height: 0px; opacity: 1; }
+    100% { width: 200px; height: 200px; opacity: 0; }
+}
+
+#info{
+    position:fixed;
+    top:10px;
+    left:10px;
+    background:rgba(255,255,255,0.9);
+    padding:15px;
+    z-index:999;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+</style>
+
+</head>
+<body>
+
+<div id="info">
+<strong>¡VUELTA AL 2D SEGURO!</strong><br>
+Controles: WASD = Mover | Tecla <b>R</b> = ¡SÚPER DINAMITA MASIVA!<br><br>
+Aliados Vivos: <span id="allyCount">500</span><br>
+Enemigos Vivos: <span id="enemyCount">500</span>
+</div>
+
+<div id="world"></div>
+
+<script>
+
+const world = document.getElementById("world");
+const allyCountText = document.getElementById("allyCount");
+const enemyCountText = document.getElementById("enemyCount");
+
+let player = document.createElement("div");
+player.className = "player";
+world.appendChild(player);
+
+let px = 2500;
+let py = 2500;
+let pLastDx = 1; 
+let pLastDy = 0;
+
+const allies = [];
+const enemies = [];
+const bullets = [];
+const dynamites = [];
+
+function create(type, x, y, isBest = false){
+    const el = document.createElement("div");
+    el.className = isBest ? (type + "-best") : type;
+    world.appendChild(el);
+
+    return {
+        el,
+        x,
+        y,
+        hp: 500,
+        isBest
+    };
+}
+
+// Spawnear 500 Aliados (480 normales y 20 Jefes "The Best")
+for(let i=0; i<500; i++){
+    let isBest = (i >= 480);
+    allies.push(create("ally", Math.random()*4800 + 100, Math.random()*4800 + 100, isBest));
+}
+
+// Spawnear 500 Enemigos (480 normales y 20 Jefes "The Best")
+for(let i=0; i<500; i++){
+    let isBest = (i >= 480);
+    enemies.push(create("enemy", Math.random()*4800 + 100, Math.random()*4800 + 100, isBest));
+}
+
+const keys = {};
+
+document.addEventListener("keydown", e => {
+    const key = e.key.toLowerCase();
+    keys[key] = true;
+    if (key === 'r') {
+        throwPlayerDynamite();
+    }
+});
+
+document.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
+});
+
+function shoot(x, y, target, isAlly){
+    const el = document.createElement("div");
+    el.className = "bullet " + (isAlly ? "bullet-ally" : "bullet-enemy");
+    world.appendChild(el);
+
+    bullets.push({ el, x, y, target, isAlly });
+}
+
+// Súper Dinamita del Jugador (Mucho más grande)
+function throwPlayerDynamite() {
+    const el = document.createElement("div");
+    el.className = "dynamite-player";
+    world.appendChild(el);
+
+    let dx = 0, dy = 0;
+    if (keys["w"]) dy = -1;
+    if (keys["s"]) dy = 1;
+    if (keys["a"]) dx = -1;
+    if (keys["d"]) dx = 1;
+
+    if (dx === 0 && dy === 0) {
+        dx = pLastDx; dy = pLastDy;
+    } else {
+        pLastDx = dx; pLastDy = dy;
+    }
+
+    dynamites.push({
+        el, x: px + 3, y: py + 3,
+        vx: dx * 8, vy: dy * 8,
+        timer: 50, isPlayerDynamite: true, targetEnemies: true
+    });
+}
+
+// Dinamita de Largo Alcance de los Jefes
+function throwBossDynamite(x, y, targetX, targetY, targetEnemies) {
+    const el = document.createElement("div");
+    el.className = "dynamite-boss";
+    world.appendChild(el);
+
+    let tdx = targetX - x;
+    let tdy = targetY - y;
+    let dist = Math.hypot(tdx, tdy) || 1;
+
+    dynamites.push({
+        el, x, y,
+        vx: (tdx / dist) * 12, 
+        vy: (tdy / dist) * 12,
+        timer: 100, // Viaja un montón de distancia
+        isPlayerDynamite: false,
+        targetEnemies: targetEnemies
+    });
+}
+
+// IA de ataque de Aliados (Cada 700ms)
+setInterval(()=>{
+    allies.forEach(ally=>{
+        if(enemies.length === 0) return;
+        let nearest = enemies[0];
+        let best = 999999;
+
+        enemies.forEach(enemy=>{
+            let d = Math.hypot(ally.x - enemy.x, ally.y - enemy.y);
+            if(d < best){ best = d; nearest = enemy; }
+        });
+
+        if(best < 350){
+            shoot(ally.x, ally.y, nearest, true);
+            if(ally.isBest && Math.random() < 0.20) {
+                throwBossDynamite(ally.x, ally.y, nearest.x, nearest.y, true);
+            }
+        }
+    });
+}, 700);
+
+// IA de ataque de Enemigos (Cada 900ms)
+setInterval(()=>{
+    enemies.forEach(enemy=>{
+        if(allies.length === 0) return;
+        let nearest = allies[0];
+        let best = 999999;
+
+        allies.forEach(ally=>{
+            let d = Math.hypot(enemy.x - ally.x, enemy.y - ally.y);
+            if(d < best){ best = d; nearest = ally; }
+        });
+
+        if(best < 350){
+            shoot(enemy.x, enemy.y, nearest, false);
+            if(enemy.isBest && Math.random() < 0.20) {
+                throwBossDynamite(enemy.x, enemy.y, nearest.x, nearest.y, false);
+            }
+        }
+    });
+}, 900);
+
+
+function update(){
+    // Movimiento jugador principal
+    let dx = 0, dy = 0;
+    if(keys["w"]) dy = -5;
+    if(keys["s"]) dy = 5;
+    if(keys["a"]) dx = -5;
+    if(keys["d"]) dx = 5;
+
+    px += dx; py += dy;
+    if (dx !== 0 || dy !== 0) {
+        let dist = Math.hypot(dx, dy);
+        pLastDx = dx / dist; pLastDy = dy / dist;
+    }
+    player.style.left = px+"px"; player.style.top = py+"px";
+
+    // Mover Aliados
+    allies.forEach(ally=>{
+        if(enemies.length === 0) return;
+        let target = enemies[0]; let best = 999999;
+        enemies.forEach(enemy=>{
+            let d = Math.hypot(enemy.x - ally.x, enemy.y - ally.y);
+            if(d < best){ best = d; target = enemy; }
+        });
+        let adx = target.x - ally.x; let ady = target.y - ally.y;
+        let dist = Math.hypot(adx, ady);
+        if(dist > 0){
+            ally.x += (adx/dist)*1.3; ally.y += (ady/dist)*1.3;
+        }
+        ally.el.style.left=ally.x+"px"; ally.el.style.top=ally.y+"px";
+    });
+
+    // Mover Enemigos
+    enemies.forEach(enemy=>{
+        if(allies.length===0) return;
+        let target = allies[0]; let best = 999999;
+        allies.forEach(ally=>{
+            let d = Math.hypot(ally.x-enemy.x, ally.y-enemy.y);
+            if(d<best){ best=d; target=ally; }
+        });
+        let edx = target.x-enemy.x; let edy = target.y-enemy.y;
+        let dist = Math.hypot(edx,edy);
+        if(dist > 0){
+            enemy.x += (edx/dist)*1.3; enemy.y += (edy/dist)*1.3;
+        }
+        enemy.el.style.left=enemy.x+"px"; enemy.el.style.top=enemy.y+"px";
+    });
+
+    // Balas (Quitan 5 de HP)
+    for(let i=bullets.length-1; i>=0; i--){
+        let b = bullets[i];
+        let targetList = b.isAlly ? enemies : allies;
+        let idx = targetList.indexOf(b.target);
+
+        if(idx === -1){ b.el.remove(); bullets.splice(i,1); continue; }
+
+        let bdx = b.target.x - b.x; let bdy = b.target.y - b.y;
+        let dist = Math.hypot(bdx, bdy);
+
+        if(dist < 15){ 
+            b.target.hp -= 5; 
+            if(b.target.hp <= 0){
+                b.target.el.remove();
+                targetList.splice(idx, 1);
+            }
+            b.el.remove(); bullets.splice(i,1); continue;
+        }
+        b.x += (bdx/dist)*6; b.y += (bdy/dist)*6;
+        b.el.style.left=b.x+"px"; b.el.style.top=b.y+"px";
+    }
+
+    // Dinamitas
+    for(let i=dynamites.length-1; i>=0; i--){
+        let d = dynamites[i];
+        d.x += d.vx; d.y += d.vy;
+        d.timer--;
+        d.el.style.left = d.x + "px"; d.el.style.top = d.y + "px";
+
+        if(d.timer <= 0) {
+            let expEl = document.createElement("div");
+            // Si es tuya, usa el efecto colosal, si es de jefe usa el normal
+            expEl.className = d.isPlayerDynamite ? "explosion-player" : "explosion-boss";
+            expEl.style.left = d.x + "px"; expEl.style.top = d.y + "px";
+            world.appendChild(expEl);
+            
+            setTimeout(() => expEl.remove(), d.isPlayerDynamite ? 500 : 300);
+
+            let victimList = d.targetEnemies ? enemies : allies;
+            let radius = d.isPlayerDynamite ? 250 : 100; // Tu radio es masivo (250px)
+            let damage = d.isPlayerDynamite ? 450 : 200; // Tu daño es casi letal (450 HP)
+
+            for(let j=victimList.length-1; j>=0; j--){
+                let victim = victimList[j];
+                let distToExplosion = Math.hypot(victim.x - d.x, victim.y - d.y);
+                
+                if(distToExplosion <= radius) { 
+                    victim.hp -= damage; 
+                    if(victim.hp <= 0) {
+                        victim.el.remove();
+                        victimList.splice(j, 1);
+                    }
+                }
+            }
+            d.el.remove(); dynamites.splice(i, 1);
+        }
+    }
+
+    enemyCountText.textContent = enemies.length;
+    allyCountText.textContent = allies.length;
+
+    window.scrollTo(px - window.innerWidth/2, py - window.innerHeight/2);
+    requestAnimationFrame(update);
+}
+
+update();
+
+</script>
+
+</body>
+</html>
