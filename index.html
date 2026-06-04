@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>EL IMPERIO EN CONFLICTO - REEQUILIBRADO</title>
+<title>EL IMPERIO EN CONFLICTO - GUERRA DE TANQUES IA</title>
 
 <style>
 body {
@@ -43,10 +43,11 @@ body {
 .tank-vehicle { position: absolute; width: 44px; height: 36px; background: #f57f17; border: 3px solid #fbc02d; border-radius: 6px; z-index: 5; }
 .tank-vehicle::after { content:''; position:absolute; top:12px; left:18px; width:22px; height:6px; background:#fbc02d; border-radius:3px; }
 
-.tank-ally { background: #0043a8 !important; border-color: #00e5ff !important; }
-.tank-ally::after { background: #00e5ff !important; }
-.tank-enemy { background: #b71c1c !important; border-color: #ff1744 !important; }
-.tank-enemy::after { background: #ff1744 !important; }
+.tank-ally { position: absolute; width: 44px; height: 36px; background: #0043a8 !important; border: 3px solid #00e5ff !important; border-radius: 6px; z-index: 6; box-shadow: 0 0 10px rgba(0,229,255,0.4); }
+.tank-ally::after { content:''; position:absolute; top:12px; left:18px; width:22px; height:6px; background:#00e5ff !important; border-radius:3px; }
+
+.tank-enemy { position: absolute; width: 44px; height: 36px; background: #b71c1c !important; border: 3px solid #ff1744 !important; border-radius: 6px; z-index: 6; box-shadow: 0 0 10px rgba(255,23,68,0.4); }
+.tank-enemy::after { content:''; position:absolute; top:12px; left:18px; width:22px; height:6px; background:#ff1744 !important; border-radius:3px; }
 
 /* JUGADOR */
 .player { position:absolute; width:32px; height:32px; background:#0056b3; border: 3px solid white; border-radius:50%; box-shadow: 0 0 15px rgba(255,255,255,0.6); z-index: 10; }
@@ -73,7 +74,7 @@ body {
 
 /* PROYECTILES Y EFECTOS */
 .bullet { position:absolute; width:6px; height:6px; border-radius:50%; z-index: 7; pointer-events: none; }
-.bullet-tank { position:absolute; width:12px; height:12px; background:#ffeb3b; border:2px solid #ff5722; border-radius:50%; box-shadow:0 0 10px #ff5722; z-index:7; }
+.bullet-tank { position:absolute; width:12px; height:12px; background:#ffeb3b; border:2px solid #ff5722; border-radius:50%; box-shadow:0 0 10px #ff5722; z-index:7; pointer-events: none; }
 .bullet-ally { background: #fffb00; }
 .bullet-enemy { background: #ff6a00; }
 
@@ -153,6 +154,9 @@ body {
 
 </head>
 <body>
+
+<!-- AQUÍ SE PONE EL CÓDIGO DE LA MÚSICA DE FONDO -->
+<audio id="bg-music" src="music-guerra" loop></audio>
 
 <div id="flashlight-overlay"></div>
 
@@ -247,11 +251,9 @@ const mmCtx = mmCanvas.getContext("2d");
 const flashlightOverlay = document.getElementById("flashlight-overlay");
 const lightAlert = document.getElementById("light-alert");
 
-// Selectores para cambiar las instrucciones de la racha dinámicamente
 const streakInstructionLabel = document.getElementById("streak-instruction-label");
 const streakInstructionValue = document.getElementById("streak-instruction-value");
 
-// Menú e historial
 const pauseMenu = document.getElementById("pause-menu");
 const tabPlayerStatus = document.getElementById("tabPlayerStatus");
 const tabAlliesAlive = document.getElementById("tabAlliesAlive");
@@ -260,6 +262,10 @@ const tabAlliesDead = document.getElementById("tabAlliesDead");
 const tabEnemiesAlive = document.getElementById("tabEnemiesAlive");
 const tabEnemiesKills = document.getElementById("tabEnemiesKills");
 const tabEnemiesDead = document.getElementById("tabEnemiesDead");
+
+// Elemento de música incorporado
+const bgMusic = document.getElementById("bg-music");
+bgMusic.volume = 0.4; // Ajusta el volumen aquí (0.0 a 1.0)
 
 const MAP_WIDTH = 4000; const MAP_HEIGHT = 4000;
 const INITIAL_MAX_UNITS = 250;
@@ -272,16 +278,18 @@ let totalAlliesKills = 0, totalEnemiesKills = 0;
 let pLastDx = 1, pLastDy = 0;
 let gameActive = false, isPaused = false, animationId = null;
 
-// Control único de la racha del Líder
 let specOpsDeployed = false;
-
-// Sistema de Linterna / Ciclo de Luz de 30 segundos
 let lightTimer = 0;
 let isNight = false;
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-/* MOTOR DE AUDIO (FIUN / BOOM) */
+function tryPlayMusic() {
+    if (bgMusic.paused && gameActive) {
+        bgMusic.play().catch(e => console.log("Esperando acción del usuario para reproducir audio."));
+    }
+}
+
 function playSound(type) {
     try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -349,12 +357,10 @@ function createCharacter(side, role, x, y){
     };
 }
 
-/* DESPLIEGUE EXCLUSIVO DE SÓLO 10 OPERADORES ESPECIALES PARA EL LÍDER */
 function spawnLeaderSpecOps() {
     specOpsDeployed = true;
-    pushToKillfeed(`⚡ ¡RACHA DEL LÍDER COMPLETADA! 10 FUERZAS ESPECIALES ENTREN CON ACCIÓN`, "#00e5ff");
+    pushToKillfeed(`⚡ ¡RACHA DEL LÍDER COMPLETADA! 10 FUERZAS ESPECIALES ENTRAN EN ACCIÓN`, "#00e5ff");
     
-    // Cambiar las instrucciones del HUD superior al completarse la racha
     streakInstructionLabel.textContent = "Controles de Combate";
     streakInstructionLabel.style.color = "#aaaaaa";
     streakInstructionValue.textContent = "[WASD] Mover | [E] Disparar | [R] Dinamita | [T] Tanque";
@@ -373,7 +379,9 @@ function initGame() {
     flashlightOverlay.style.display = "none"; lightAlert.style.display = "none";
     world.classList.remove("night-mode");
     
-    // Restaurar instrucciones del HUD al reiniciar
+    // Reiniciar música al inicio
+    bgMusic.currentTime = 0;
+
     streakInstructionLabel.textContent = "Racha: 20 Bajas para Desplegar SpecOps";
     streakInstructionLabel.style.color = "";
     streakInstructionValue.textContent = "[WASD] Mover | progreso: (0/20)";
@@ -383,7 +391,7 @@ function initGame() {
     
     allies = []; enemies = []; bullets = []; dynamites = []; supplyDrops = []; vehicles = [];
     
-    const elementsToRemove = world.querySelectorAll('.tank-vehicle, .player, .player-tank, [class^="ally-"], [class^="enemy-"], .bullet, .bullet-tank, .supply-drop, .dynamite-player, .explosion-player');
+    const elementsToRemove = world.querySelectorAll('.tank-vehicle, .tank-ally, .tank-enemy, .player, .player-tank, [class^="ally-"], [class^="enemy-"], .bullet, .bullet-tank, .supply-drop, .dynamite-player, .explosion-player');
     elementsToRemove.forEach(el => el.remove());
     
     killfeed.innerHTML = "";
@@ -394,7 +402,7 @@ function initGame() {
     playerHpText.textContent = playerData.hp; playerKillsText.textContent = 0;
     endScreen.style.display = "none"; pauseMenu.style.display = "none";
 
-    let tankPositions = [{x:1200, y:1500},{x:2800, y:2500},{x:2000, y:900},{x:2000, y:3200}];
+    let tankPositions = [{x:1200, y:1500},{x:2800, y:2500},{x:2000, y:900},{x:2000, y:3200},{x:800, y:2200},{x:3200, y:1200}];
     tankPositions.forEach(pos => {
         const el = document.createElement("div"); el.className = "tank-vehicle"; el.style.left = pos.x+"px"; el.style.top = pos.y+"px"; world.appendChild(el);
         vehicles.push({ el, x: pos.x, y: pos.y, taken: false });
@@ -404,11 +412,11 @@ function initGame() {
 
     for(let i=0; i<INITIAL_MAX_UNITS; i++){
         let r = "assault"; if(i >= 240) r = "best"; else if(i >= 210 && i < 225) r = "medic"; else if(i >= 225 && i < 240) r = "heavy";
-        allies.push(createCharacter("ally", r, Math.random()*1500 + 2300, Math.random()*3600 + 200));
+        allies.push(createCharacter("ally", r, Math.random()*2500 + 1300, Math.random()*3600 + 200));
     }
     for(let i=0; i<INITIAL_MAX_UNITS; i++){
         let r = "assault"; if(i >= 240) r = "best"; else if(i >= 210 && i < 225) r = "medic"; else if(i >= 225 && i < 240) r = "heavy";
-        enemies.push(createCharacter("enemy", r, Math.random()*1500 + 200, Math.random()*3600 + 200));
+        enemies.push(createCharacter("enemy", r, Math.random()*2500 + 200, Math.random()*3600 + 200));
     }
 
     gameActive = true; update();
@@ -417,6 +425,8 @@ function initGame() {
 function openPauseMenu() {
     if(!gameActive) return;
     isPaused = true;
+    bgMusic.pause(); // Pausar música al pausar juego
+
     tabPlayerStatus.textContent = playerData.hp > 0 ? "Vivo" : "Caído";
     tabPlayerStatus.style.color = playerData.hp > 0 ? "#2ecc71" : "#e74c3c";
     
@@ -432,13 +442,16 @@ function openPauseMenu() {
 }
 
 function closePauseMenu() {
-    isPaused = false;
     pauseMenu.style.display = "none";
+    isPaused = false;
+    tryPlayMusic(); // Reanudar música
 }
 
 const keys = {};
 document.addEventListener("keydown", e => {
     if(!gameActive || isPaused) return;
+    tryPlayMusic(); // Reproducir música al presionar cualquier tecla
+    
     const key = e.key.toLowerCase(); keys[key] = true;
     if(playerData.hp > 0) {
         if(key === 'e') fireWeapon();
@@ -482,7 +495,7 @@ function throwDynamite() {
     dynamites.push({ el, x: playerData.x+10, y: playerData.y+10, vx: pLastDx*6, vy: pLastDy*6, timer: 40 });
 }
 
-/* CICLO DE 30 SEGUNDOS DE LUZ / OSCURIDAD */
+/* CICLO DE LUZ / OSCURIDAD */
 setInterval(() => {
     if(!gameActive || isPaused) return;
     lightTimer++;
@@ -503,7 +516,27 @@ setInterval(() => {
 function IA_Logic() {
     if(!gameActive || isPaused) return;
 
+    // LÓGICA DE UNIDADES ALIADAS
     allies.forEach(ally => {
+        if(!ally.inTank && vehicles.length > 0) {
+            for(let i=vehicles.length-1; i>=0; i--) {
+                let v = vehicles[i];
+                if(!v.taken && Math.hypot(v.x - ally.x, v.y - ally.y) < 350) {
+                    let vdx = v.x - ally.x; let vdy = v.y - ally.y;
+                    let vdist = Math.hypot(vdx, vdy) || 1;
+                    ally.x += (vdx / vdist) * ally.speed; ally.y += (vdy / vdist) * ally.speed;
+                    
+                    if(Math.hypot(v.x - ally.x, v.y - ally.y) < 30) {
+                        ally.inTank = true; ally.hp = 5000; ally.maxHp = 5000;
+                        ally.speed = 2.0; ally.el.className = "tank-ally";
+                        v.el.remove(); vehicles.splice(i, 1);
+                        pushToKillfeed(`🔷 Un ${ally.name} ha capturado un tanque`, "cyan");
+                    }
+                    return;
+                }
+            }
+        }
+
         if(enemies.length === 0) return;
         
         let closestEnemy = null; let minDist = ally.role === "specops" ? 600 : 450;
@@ -515,16 +548,26 @@ function IA_Logic() {
         if(closestEnemy) {
             let dx = closestEnemy.x - ally.x; let dy = closestEnemy.y - ally.y;
             let dist = Math.hypot(dx, dy) || 1;
-            ally.x += (dx / dist) * ally.speed; ally.y += (dy / dist) * ally.speed;
+            
+            if(dist > 220) {
+                ally.x += (dx / dist) * ally.speed; ally.y += (dy / dist) * ally.speed;
+            } else if (dist < 150) {
+                ally.x -= (dx / dist) * ally.speed * 0.6; ally.y -= (dy / dist) * ally.speed * 0.6;
+            }
 
             if(ally.role === "specops") {
                 let rot = Math.atan2(dy, dx) + Math.PI/2;
                 ally.el.style.transform = `rotate(${rot}rad)`;
             }
 
-            if(Math.random() < (ally.role === "specops" ? 0.25 : 0.12)) {
-                const el = document.createElement("div"); el.className = "bullet bullet-ally"; world.appendChild(el);
-                bullets.push({ el, x: ally.x, y: ally.y, isAlly: true, isTank: false, vx: (dx/dist)*9, vy: (dy/dist)*9, shotByPlayer: false });
+            if(Math.random() < (ally.inTank ? 0.05 : (ally.role === "specops" ? 0.25 : 0.12))) {
+                if(ally.inTank) {
+                    const el = document.createElement("div"); el.className = "bullet-tank"; world.appendChild(el);
+                    bullets.push({ el, x: ally.x+15, y: ally.y+15, isAlly: true, isTank: true, vx: (dx/dist)*11, vy: (dy/dist)*11, shotByPlayer: false });
+                } else {
+                    const el = document.createElement("div"); el.className = "bullet bullet-ally"; world.appendChild(el);
+                    bullets.push({ el, x: ally.x, y: ally.y, isAlly: true, isTank: false, vx: (dx/dist)*9, vy: (dy/dist)*9, shotByPlayer: false });
+                }
             }
         } else {
             ally.patrolTimer--;
@@ -544,7 +587,27 @@ function IA_Logic() {
         if(ally.y < 30) ally.y = 30; if(ally.y > MAP_HEIGHT-40) ally.y = MAP_HEIGHT-40;
     });
 
+    // LÓGICA DE UNIDADES ENEMIGAS
     enemies.forEach(enemy => {
+        if(!enemy.inTank && vehicles.length > 0) {
+            for(let i=vehicles.length-1; i>=0; i--) {
+                let v = vehicles[i];
+                if(!v.taken && Math.hypot(v.x - enemy.x, v.y - enemy.y) < 350) {
+                    let vdx = v.x - enemy.x; let vdy = v.y - enemy.y;
+                    let vdist = Math.hypot(vdx, vdy) || 1;
+                    enemy.x += (vdx / vdist) * enemy.speed; enemy.y += (vdy / vdist) * enemy.speed;
+                    
+                    if(Math.hypot(v.x - enemy.x, v.y - enemy.y) < 30) {
+                        enemy.inTank = true; enemy.hp = 5000; enemy.maxHp = 5000;
+                        enemy.speed = 2.0; enemy.el.className = "tank-enemy";
+                        v.el.remove(); vehicles.splice(i, 1);
+                        pushToKillfeed(`🔶 Un ${enemy.name} ha capturado un tanque`, "red");
+                    }
+                    return;
+                }
+            }
+        }
+
         let targets = [...allies]; if(playerData.hp > 0) targets.push(playerData);
         if(targets.length === 0) return;
 
@@ -557,11 +620,21 @@ function IA_Logic() {
         if(closestTarget) {
             let dx = closestTarget.x - enemy.x; let dy = closestTarget.y - enemy.y;
             let dist = Math.hypot(dx, dy) || 1;
-            enemy.x += (dx / dist) * enemy.speed; enemy.y += (dy / dist) * enemy.speed;
+            
+            if(dist > 220) {
+                enemy.x += (dx / dist) * enemy.speed; enemy.y += (dy / dist) * enemy.speed;
+            } else if (dist < 150) {
+                enemy.x -= (dx / dist) * enemy.speed * 0.6; enemy.y -= (dy / dist) * enemy.speed * 0.6;
+            }
 
-            if(Math.random() < 0.12) {
-                const el = document.createElement("div"); el.className = "bullet bullet-enemy"; world.appendChild(el);
-                bullets.push({ el, x: enemy.x, y: enemy.y, isAlly: false, isTank: false, vx: (dx/dist)*9, vy: (dy/dist)*9, shotByPlayer: false });
+            if(Math.random() < (enemy.inTank ? 0.05 : 0.12)) {
+                if(enemy.inTank) {
+                    const el = document.createElement("div"); el.className = "bullet-tank"; world.appendChild(el);
+                    bullets.push({ el, x: enemy.x+15, y: enemy.y+15, isAlly: false, isTank: true, vx: (dx/dist)*11, vy: (dy/dist)*11, shotByPlayer: false });
+                } else {
+                    const el = document.createElement("div"); el.className = "bullet bullet-enemy"; world.appendChild(el);
+                    bullets.push({ el, x: enemy.x, y: enemy.y, isAlly: false, isTank: false, vx: (dx/dist)*9, vy: (dy/dist)*9, shotByPlayer: false });
+                }
             }
         } else {
             enemy.patrolTimer--;
@@ -633,18 +706,17 @@ function update() {
         if(b.isAlly) {
             for(let e=enemies.length-1; e>=0; e--) {
                 if(Math.hypot(enemies[e].x - b.x, enemies[e].y - b.y) < 25) {
-                    enemies[e].hp -= 90;
+                    enemies[e].hp -= b.isTank ? 400 : 90;
+                    
                     if(enemies[e].hp <= 0) {
                         totalAlliesKills++;
                         pushToKillfeed(`🟦 Aliado eliminó a ${enemies[e].name}`, "cyan");
                         enemies[e].el.remove(); enemies.splice(e,1);
                         
-                        // SÓLO CONTABILIZA SI EL DISPARO VINO DIRECTAMENTE DEL LÍDER
                         if (b.shotByPlayer) {
                             playerKills++;
                             playerKillsText.textContent = playerKills;
                             
-                            // Verificar racha de 20 bajas si no se ha completado antes
                             if (!specOpsDeployed) {
                                 if (playerKills >= 20) {
                                     spawnLeaderSpecOps();
@@ -659,13 +731,13 @@ function update() {
             }
         } else {
             if(playerData.hp > 0 && Math.hypot(playerData.x + 16 - b.x, playerData.y + 16 - b.y) < 25) {
-                playerData.hp -= 30; playerHpText.textContent = Math.max(0, playerData.hp);
+                playerData.hp -= b.isTank ? 400 : 30; playerHpText.textContent = Math.max(0, playerData.hp);
                 if(playerData.hp <= 0) { player.remove(); totalEnemiesKills++; pushToKillfeed("💀 Comandante Supremo abatido", "red"); }
                 b.el.remove(); bullets.splice(i,1); continue;
             }
             for(let a=allies.length-1; a>=0; a--) {
                 if(Math.hypot(allies[a].x - b.x, allies[a].y - b.y) < 25) {
-                    allies[a].hp -= 90;
+                    allies[a].hp -= b.isTank ? 400 : 90;
                     if(allies[a].hp <= 0) {
                         totalEnemiesKills++;
                         pushToKillfeed(`🟥 Enemigo eliminó a ${allies[a].name}`, "red");
@@ -691,7 +763,6 @@ function update() {
                         totalAlliesKills++;
                         enemies[e].el.remove(); enemies.splice(e,1);
                         
-                        // La dinamita siempre la tira el Líder
                         playerKills++;
                         playerKillsText.textContent = playerKills;
                         if (!specOpsDeployed) {
@@ -718,7 +789,9 @@ function update() {
 }
 
 function showEndGame(isVictory) {
-    gameActive = false; endScreen.style.display = "block";
+    gameActive = false;
+    bgMusic.pause(); // Detener música al terminar la partida
+    endScreen.style.display = "block";
     if(isVictory) { endTitle.textContent = "VICTORIA TOTAL"; endPhrase.textContent = `Bajas causadas por ti: ${playerKills}`; }
     else { endTitle.textContent = "MISIÓN FALLIDA"; endPhrase.textContent = "Derrota absoluta del imperio."; }
 }
